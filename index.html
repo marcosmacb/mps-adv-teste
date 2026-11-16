@@ -456,7 +456,7 @@
         let statusChartInstance = null;
         let typeChartInstance = null;
 
-        // ==========================================
+       // ==========================================
         // 2. NAVEGAÇÃO DE ABAS
         // ==========================================
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -469,7 +469,11 @@
                 document.getElementById(targetId).classList.remove('hidden');
 
                 if(targetId === 'tab-relatorios') initCharts();
-                if(targetId === 'tab-audiencias' && fullCalendarInstance) fullCalendarInstance.render(); // Corrige bug de renderização do calendário quando a aba está oculta
+                
+                // FIX: Carrega as audiências frescas apenas QUANDO a aba for aberta
+                if(targetId === 'tab-audiencias') {
+                    loadAudiencias(); 
+                }
             });
         });
 
@@ -1193,17 +1197,20 @@
             }
         };
 
-        // --- Renderizar FullCalendar ---
+ // --- Renderizar FullCalendar ---
         async function loadAudiencias() {
-            // Traz as audiências fazendo um JOIN com a tabela processos
+            // Apenas renderiza se a aba estiver visível para evitar o erro 'isConnected'
+            if (document.getElementById('tab-audiencias').classList.contains('hidden')) {
+                return;
+            }
+
             const { data: audiencias, error } = await supabaseClient.from('calendario_audiencias').select('*, processos(numero_processo)');
             if(error || !audiencias) return;
 
-            // Formata as cores baseadas no status
             const eventos = audiencias.map(a => {
-                let cor = '#004D4D'; // Agendada (Verde escuro)
-                if (a.status === 'realizada') cor = '#28a745'; // Verde sucesso
-                if (a.status === 'cancelada') cor = '#dc3545'; // Vermelho perigo
+                let cor = '#004D4D'; 
+                if (a.status === 'realizada') cor = '#28a745'; 
+                if (a.status === 'cancelada') cor = '#dc3545'; 
 
                 const numProcesso = a.processos ? a.processos.numero_processo : '';
 
@@ -1222,40 +1229,36 @@
 
             const calendarEl = document.getElementById('calendar');
             
-            // SE A INSTÂNCIA DO CALENDÁRIO AINDA NÃO EXISTE, NÓS A CRIAMOS
-            if (!fullCalendarInstance) {
-                fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-                    initialView: 'dayGridMonth',
-                    locale: 'pt-br',
-                    headerToolbar: {
-                        left: 'prev,next today',
-                        center: 'title',
-                        right: 'dayGridMonth,timeGridWeek,listMonth'
-                    },
-                    buttonText: {
-                        today: 'Hoje',
-                        month: 'Mês',
-                        week: 'Semana',
-                        list: 'Lista'
-                    },
-                    events: eventos, // Passa os eventos iniciais
-                    eventClick: function(info) {
-                        openAudienciaModal(info.event.id);
-                    },
-                    dateClick: function(info) {
-                        openAudienciaModal(null, info.dateStr);
-                    }
-                });
-            } else {
-                // SE O CALENDÁRIO JÁ EXISTE, APENAS TROCAMOS OS EVENTOS SEM DESTRUIR A ESTRUTURA
-                fullCalendarInstance.removeAllEvents();
-                fullCalendarInstance.addEventSource(eventos);
+            // Destroi a instância velha de forma segura antes de recriar
+            if (fullCalendarInstance) {
+                fullCalendarInstance.destroy();
+                fullCalendarInstance = null;
             }
 
-            // Renderiza apenas se a aba estiver visível (evita quebrar a largura)
-            if (!document.getElementById('tab-audiencias').classList.contains('hidden')) {
-                fullCalendarInstance.render();
-            }
+            fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                locale: 'pt-br',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,listMonth'
+                },
+                buttonText: {
+                    today: 'Hoje',
+                    month: 'Mês',
+                    week: 'Semana',
+                    list: 'Lista'
+                },
+                events: eventos, 
+                eventClick: function(info) {
+                    openAudienciaModal(info.event.id);
+                },
+                dateClick: function(info) {
+                    openAudienciaModal(null, info.dateStr);
+                }
+            });
+
+            fullCalendarInstance.render();
         }
 
         // ==========================================
