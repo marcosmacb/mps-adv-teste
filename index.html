@@ -82,6 +82,22 @@
         .login-box button { width: 100%; }
         .alert { padding: 10px; margin-bottom: 15px; border-radius: 4px; display: none; }
         .alert.error { display: block; background: #f8d7da; color: #721c24; }
+
+        /* MODAL */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .modal { background: white; padding: 30px; border-radius: 8px; width: 100%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .modal-header h3 { margin: 0; color: var(--primary-dark); }
+        .btn-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
+        .btn-close:hover { color: var(--primary-dark); }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group label { font-size: 0.9rem; font-weight: 600; color: #555; }
+        .form-group input, .form-group select { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-secondary { background: #eee; color: #333; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-secondary:hover { background: #ddd; }
     </style>
 </head>
 <body>
@@ -137,8 +153,8 @@
             <!-- ABA 2: CLIENTES -->
             <section id="tab-clientes" class="tab-content hidden">
                 <div class="action-bar">
-                    <input type="text" class="search-box" id="search-client" placeholder="Buscar cliente...">
-                    <button class="btn-primary" onclick="alert('Cadastro em breve')"><i class="fas fa-plus"></i> Adicionar Cliente</button>
+                    <input type="text" class="search-box" id="search-client" placeholder="Buscar cliente por nome ou email...">
+                    <button class="btn-primary" onclick="openClientModal()"><i class="fas fa-plus"></i> Adicionar Cliente</button>
                 </div>
                 <table class="data-table">
                     <thead><tr><th>Nome</th><th>E-mail</th><th>CPF/CNPJ</th><th>Ações</th></tr></thead>
@@ -208,6 +224,52 @@
         </main>
     </div>
 
+
+    <!-- MODAL DE CLIENTE -->
+        <div id="client-modal" class="modal-overlay hidden">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modal-client-title">Adicionar Cliente</h3>
+                    <button class="btn-close" onclick="closeClientModal()">&times;</button>
+                </div>
+                <form id="client-form">
+                    <input type="hidden" id="client-id">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="client-name">Nome / Razão Social *</label>
+                            <input type="text" id="client-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="client-email">E-mail</label>
+                            <input type="email" id="client-email">
+                        </div>
+                        <div class="form-group">
+                            <label for="client-phone">Telefone</label>
+                            <input type="text" id="client-phone">
+                        </div>
+                        <div class="form-group">
+                            <label for="client-cpf">CPF/CNPJ</label>
+                            <input type="text" id="client-cpf">
+                        </div>
+                        <div class="form-group">
+                            <label for="client-status">Status</label>
+                            <select id="client-status">
+                                <option value="ativo">Ativo</option>
+                                <option value="inativo">Inativo</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="client-address">Endereço</label>
+                            <input type="text" id="client-address">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closeClientModal()">Cancelar</button>
+                        <button type="submit" class="btn-primary">Salvar Cliente</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     <script>
         // ==========================================
         // 1. CONFIGURAÇÃO SUPABASE
@@ -301,21 +363,142 @@
         }
 
         // ==========================================
-        // 5. ABA: CLIENTES E PROCESSOS
+        // 5. ABA: CLIENTES E PROCESSOS (CRUD COMPLETO)
         // ==========================================
+
+        // --- Modais ---
+        function openClientModal(id = null) {
+            const modal = document.getElementById('client-modal');
+            const title = document.getElementById('modal-client-title');
+            const form = document.getElementById('client-form');
+            
+            form.reset();
+            document.getElementById('client-id').value = '';
+            
+            if (id) {
+                title.textContent = 'Editar Cliente';
+                fetchClientData(id);
+            } else {
+                title.textContent = 'Adicionar Cliente';
+                document.getElementById('client-status').value = 'ativo';
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeClientModal() {
+            document.getElementById('client-modal').classList.add('hidden');
+        }
+
+        // --- Buscar dados de um cliente específico para Editar ---
+        async function fetchClientData(id) {
+            const { data, error } = await supabaseClient.from('clients').select('*').eq('id', id).single();
+            if (error) {
+                alert('Erro ao buscar dados do cliente.');
+                return;
+            }
+            document.getElementById('client-id').value = data.id;
+            document.getElementById('client-name').value = data.name || '';
+            document.getElementById('client-email').value = data.email || '';
+            document.getElementById('client-phone').value = data.phone || '';
+            document.getElementById('client-cpf').value = data.cpf || '';
+            document.getElementById('client-address').value = data.address || '';
+            document.getElementById('client-status').value = data.status || 'ativo';
+        }
+
+        // --- Salvar (Criar ou Atualizar) ---
+        document.getElementById('client-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const clientId = document.getElementById('client-id').value;
+            const clientData = {
+                name: document.getElementById('client-name').value,
+                email: document.getElementById('client-email').value,
+                phone: document.getElementById('client-phone').value,
+                cpf: document.getElementById('client-cpf').value,
+                address: document.getElementById('client-address').value,
+                status: document.getElementById('client-status').value
+            };
+
+            let error;
+            if (clientId) {
+                // Atualizar (Update)
+                const { error: updateError } = await supabaseClient.from('clients').update(clientData).eq('id', clientId);
+                error = updateError;
+            } else {
+                // Inserir (Create)
+                const { error: insertError } = await supabaseClient.from('clients').insert([clientData]);
+                error = insertError;
+            }
+
+            if (error) {
+                alert('Erro ao salvar o cliente: ' + error.message);
+            } else {
+                closeClientModal();
+                loadClients(); // Atualiza a tabela imediatamente
+                loadDashboardData(); // Atualiza o KPI
+            }
+        });
+
+        // --- Excluir (Delete) ---
+        window.deleteClient = async function(id) {
+            if (!confirm('Tem certeza que deseja excluir este cliente? Todos os processos associados podem ser afetados.')) return;
+
+            const { error } = await supabaseClient.from('clients').delete().eq('id', id);
+
+            if (error) {
+                alert('Erro ao excluir: ' + error.message);
+            } else {
+                loadClients();
+                loadDashboardData();
+            }
+        };
+
+        // --- Listar na Tabela (Read) ---
         async function loadClients() {
-            const { data: clients } = await supabaseClient.from('clients').select('*').order('name');
+            const { data: clients, error } = await supabaseClient.from('clients').select('*').order('name');
             const tbody = document.getElementById('clients-tbody');
             tbody.innerHTML = '';
-            if(!clients) return;
+            
+            if(error) {
+                console.error(error); 
+                return;
+            }
+
             clients.forEach(c => {
-                tbody.innerHTML += `<tr><td><strong>${c.name}</strong></td><td>${c.email || '-'}</td><td>${c.cpf || '-'}</td>
-                    <td><button style="border:none; background:transparent; color:#dc3545; cursor:pointer;"><i class="fas fa-trash"></i></button></td></tr>`;
+                const tr = document.createElement('tr');
+                const statusClass = c.status === 'ativo' ? 'badge-ativo' : 'badge-inativo';
+                tr.innerHTML = `
+                    <td><strong>${c.name}</strong></td>
+                    <td>${c.email || '-'}</td>
+                    <td>${c.cpf || '-'}</td>
+                    <td><span class="badge ${statusClass}">${c.status.toUpperCase()}</span></td>
+                    <td>
+                        <button style="border:none; background:transparent; color:#004D4D; cursor:pointer; margin-right: 10px;" onclick="openClientModal(${c.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                        <button style="border:none; background:transparent; color:#dc3545; cursor:pointer;" onclick="deleteClient(${c.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
             });
         }
 
+        // Filtro de Clientes Local (Pesquisa rápida)
+        document.getElementById('search-client').addEventListener('input', (e) => {
+            const termo = e.target.value.toLowerCase();
+            const linhas = document.querySelectorAll('#clients-tbody tr');
+            linhas.forEach(linha => {
+                const nome = linha.children[0].textContent.toLowerCase();
+                const email = linha.children[1].textContent.toLowerCase();
+                const cpf = linha.children[2].textContent.toLowerCase();
+                if(nome.includes(termo) || email.includes(termo) || cpf.includes(termo)) {
+                    linha.style.display = '';
+                } else {
+                    linha.style.display = 'none';
+                }
+            });
+        });
+
         async function loadProcessos() {
-            // Trazendo o processo e o nome do cliente associado via foreign key (join)
             const { data: processos } = await supabaseClient.from('processos').select(`*, clients(name)`).order('created_at', { ascending: false });
             const tbody = document.getElementById('processos-tbody');
             tbody.innerHTML = '';
