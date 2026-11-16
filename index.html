@@ -445,7 +445,36 @@
             </div>
         </div>
 
-
+<!-- TELA EXCLUSIVA DO CLIENTE -->
+    <div id="client-screen" class="hidden">
+        <header class="topbar">
+            <div class="logo"><i class="fas fa-balance-scale"></i> LEXGUARDIAN | PORTAL DO CLIENTE</div>
+            <div class="user-actions">
+                <span id="client-info">Cliente</span>
+                <!-- O botão de sair agora chama a função global doLogout() -->
+                <button class="btn-logout" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
+            </div>
+        </header>
+        <main class="container">
+            <div style="background: white; padding: 25px; border-radius: 8px; box-shadow: var(--card-shadow); border-top: 4px solid var(--primary-gold);">
+                <h2 style="color: var(--primary-dark); margin-top: 0;">Meus Processos</h2>
+                <p style="color: #666; margin-bottom: 20px;">Acompanhe o status e o andamento das suas ações em tempo real.</p>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Número do Processo</th>
+                            <th>Área / Tipo</th>
+                            <th>Status Atual</th>
+                            <th>Data de Abertura</th>
+                        </tr>
+                    </thead>
+                    <tbody id="client-process-list">
+                        <tr><td colspan="4" style="text-align:center;">Carregando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
     <script>
         // ==========================================
         // 1. CONFIGURAÇÃO SUPABASE
@@ -482,27 +511,36 @@
         });
 
         // ==========================================
-        // 3. AUTENTICAÇÃO (SUPABASE AUTH + SESSÃO)
+        // 3. AUTENTICAÇÃO E ROTEAMENTO (RBAC)
         // ==========================================
         
-        // Verifica se há sessão ativa (Resolve o problema do F5)
-        async function checkSession() {
-            const { data: { session } } = await supabaseClient.auth.getSession();
+        // Função que direciona o usuário dependendo do tipo (Admin vs Cliente)
+        function routeUser() {
+            document.getElementById('login-screen').classList.add('hidden');
             
-            if (session) {
-                // Se existe sessão, busca os dados do perfil na nossa tabela 'usuários'
-                const { data: userData } = await supabaseClient.from('usuários').select('*').eq('email', session.user.email).single();
-                if (userData) {
-                    currentUser = userData;
-                    document.getElementById('user-info').textContent = currentUser.name;
-                    document.getElementById('login-screen').classList.add('hidden');
-                    document.getElementById('app-screen').classList.remove('hidden');
-                    loadAllData();
-                }
+            if (currentUser.user_type === 'client') {
+                // Rota do Cliente
+                document.getElementById('client-info').textContent = currentUser.name;
+                document.getElementById('client-screen').classList.remove('hidden');
+                loadClientPortal();
+            } else {
+                // Rota do Administrador / Advogado
+                document.getElementById('user-info').textContent = currentUser.name;
+                document.getElementById('app-screen').classList.remove('hidden');
+                loadAllData();
             }
         }
 
-        // Executa a verificação imediatamente
+        async function checkSession() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                const { data: userData } = await supabaseClient.from('usuários').select('*').eq('email', session.user.email).single();
+                if (userData) {
+                    currentUser = userData;
+                    routeUser();
+                }
+            }
+        }
         checkSession();
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -512,42 +550,37 @@
             const alertBox = document.getElementById('login-alert');
 
             try {
-                // 1. Faz o login seguro no Supabase Auth (Isso gera o token e os cookies que sobrevivem ao F5)
-                const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
-                    email: email,
-                    password: password
-                });
-
+                const { error: authError } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if (authError) throw authError;
 
-                // 2. Busca os dados do usuário na nossa tabela
                 const { data: userData, error: userError } = await supabaseClient.from('usuários').select('*').eq('email', email).single();
-                
                 if (userData) {
                     currentUser = userData; 
-                    document.getElementById('user-info').textContent = currentUser.name;
-                    document.getElementById('login-screen').classList.add('hidden');
-                    document.getElementById('app-screen').classList.remove('hidden');
-                    loadAllData(); 
+                    routeUser();
                 } else {
                     throw new Error("Perfil não encontrado na tabela.");
                 }
             } catch (err) {
-                console.error(err);
                 alertBox.textContent = 'Credenciais inválidas.';
                 alertBox.className = 'alert error';
             }
         });
 
-        document.getElementById('btn-logout').addEventListener('click', async () => {
-            // Desloga oficialmente do Supabase e limpa os dados salvos no navegador
+        // Função global de logout (serve para as duas telas)
+        window.doLogout = async function() {
             await supabaseClient.auth.signOut(); 
-            
-            currentUser = null; 
+            currentUser = null;
             document.getElementById('login-form').reset();
             document.getElementById('app-screen').classList.add('hidden');
+            document.getElementById('client-screen').classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
-        });
+        };
+
+        // Certifique-se de remover ou substituir o antigo listener do botão de logout do admin
+        const btnLogoutAdmin = document.getElementById('btn-logout');
+        if(btnLogoutAdmin) {
+            btnLogoutAdmin.onclick = doLogout;
+        }
 
         // ==========================================
         // 4. CARREGAMENTO DE DADOS PRINCIPAL
@@ -1294,6 +1327,53 @@
             fullCalendarInstance.render();
         }
 
+
+        // ==========================================
+        // PORTAL DO CLIENTE: CARREGAR PROCESSOS
+        // ==========================================
+        async function loadClientPortal() {
+            if (!currentUser || !currentUser.client_id) {
+                document.getElementById('client-process-list').innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">Seu usuário não está vinculado a um cadastro de cliente.</td></tr>';
+                return;
+            }
+
+            // Filtra os processos apenas onde o cliente_id bate com o client_id do usuário logado
+            const { data: processos, error } = await supabaseClient
+                .from('processos')
+                .select('*')
+                .eq('cliente_id', currentUser.client_id)
+                .order('created_at', { ascending: false });
+
+            const tbody = document.getElementById('client-process-list');
+            tbody.innerHTML = '';
+            
+            if (error) { 
+                console.error(error); 
+                return; 
+            }
+
+            if (processos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum processo em andamento encontrado.</td></tr>';
+                return;
+            }
+
+            processos.forEach(p => {
+                const dataInicio = p.data_abertura ? p.data_abertura.split('-').reverse().join('/') : '-';
+                
+                let statusColor = '#666';
+                let statusBg = '#eee';
+                if(p.status === 'andamento') { statusColor = '#004D4D'; statusBg = '#D1ECF1'; }
+                if(p.status === 'concluido') { statusColor = '#155724'; statusBg = '#D4EDDA'; }
+                if(p.status === 'pendente') { statusColor = '#856404'; statusBg = '#FFF3CD'; }
+                
+                tbody.innerHTML += `<tr>
+                    <td><strong>${p.numero_processo || 'S/N'}</strong></td>
+                    <td><span style="text-transform: capitalize;">${p.tipo_processo || '-'}</span></td>
+                    <td><span class="badge" style="background-color: ${statusBg}; color: ${statusColor}; text-transform: uppercase;">${p.status}</span></td>
+                    <td>${dataInicio}</td>
+                </tr>`;
+            });
+        }
         // ==========================================
         // 8. RELATÓRIOS (CHART.JS)
         // ==========================================
