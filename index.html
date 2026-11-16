@@ -208,9 +208,8 @@
             <section id="tab-audiencias" class="tab-content hidden">
                 <div class="action-bar">
                     <h3 style="margin:0; color: var(--primary-dark);">Pauta de Audiências</h3>
-                    <button class="btn-primary" onclick="alert('Nova audiência em breve')"><i class="fas fa-plus"></i> Nova Audiência</button>
+                    <button class="btn-primary" onclick="openAudienciaModal()"><i class="fas fa-plus"></i> Nova Audiência</button>
                 </div>
-                <div id="calendar"></div>
             </section>
 
             <!-- ABA 6: RELATÓRIOS -->
@@ -379,6 +378,70 @@
                 </form>
             </div>
         </div>
+
+        <!-- MODAL DE AUDIÊNCIA -->
+        <div id="audiencia-modal" class="modal-overlay hidden">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modal-audiencia-title">Agendar Audiência</h3>
+                    <button class="btn-close" onclick="closeAudienciaModal()">&times;</button>
+                </div>
+                <form id="audiencia-form">
+                    <input type="hidden" id="audiencia-id">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="audiencia-title">Título / Assunto *</label>
+                            <input type="text" id="audiencia-title" required placeholder="Ex: Audiência de Instrução">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="audiencia-process">Processo Vinculado *</label>
+                            <select id="audiencia-process" required>
+                                <option value="">Carregando...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="audiencia-date">Data e Hora *</label>
+                            <input type="datetime-local" id="audiencia-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="audiencia-type">Tipo de Audiência</label>
+                            <select id="audiencia-type">
+                                <option value="inicial">Inicial</option>
+                                <option value="conciliacao">Conciliação</option>
+                                <option value="instrucao">Instrução e Julgamento</option>
+                                <option value="julgamento">Julgamento</option>
+                                <option value="outra">Outra</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="audiencia-local">Local / Fórum / Link Virtual</label>
+                            <input type="text" id="audiencia-local">
+                        </div>
+                        <div class="form-group">
+                            <label for="audiencia-status">Status</label>
+                            <select id="audiencia-status">
+                                <option value="agendada">Agendada</option>
+                                <option value="realizada">Realizada</option>
+                                <option value="cancelada">Cancelada</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="audiencia-desc">Observações / Detalhes</label>
+                            <input type="text" id="audiencia-desc" placeholder="Levar testemunhas, documentos, etc...">
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="justify-content: space-between;">
+                        <button type="button" class="btn-secondary" id="btn-delete-audiencia" style="background: #f8d7da; color: #721c24; display: none;" onclick="deleteAudiencia()">Excluir</button>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn-secondary" onclick="closeAudienciaModal()">Cancelar</button>
+                            <button type="submit" class="btn-primary">Salvar Audiência</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+
     <script>
         // ==========================================
         // 1. CONFIGURAÇÃO SUPABASE
@@ -1025,24 +1088,140 @@
             }
         }, 10000); // Atualiza a cada 10 segundos para manter a tela viva
         // ==========================================
-        // 7. ABA: AUDIÊNCIAS (FULLCALENDAR)
+        // 7. ABA: AUDIÊNCIAS (FULLCALENDAR E CRUD)
         // ==========================================
-        async function loadAudiencias() {
-            const { data: audiencias } = await supabaseClient.from('calendario_audiencias').select('*');
-            if(!audiencias) return;
 
-            // Mapeando dados do banco para o formato que o FullCalendar espera
-            const eventos = audiencias.map(a => ({
-                id: a.id,
-                title: a.titulo,
-                start: a.data_audiencia,
-                backgroundColor: a.status === 'realizada' ? '#28a745' : '#004D4D',
-                borderColor: a.status === 'realizada' ? '#28a745' : '#004D4D',
-            }));
+        // --- Abrir e Fechar Modal ---
+        async function openAudienciaModal(id = null, dateClickStr = null) {
+            const modal = document.getElementById('audiencia-modal');
+            const title = document.getElementById('modal-audiencia-title');
+            const form = document.getElementById('audiencia-form');
+            const btnDelete = document.getElementById('btn-delete-audiencia');
+            
+            form.reset();
+            document.getElementById('audiencia-id').value = '';
+            
+            // Popula a lista de processos
+            const { data: processos } = await supabaseClient.from('processos').select('id, numero_processo').order('created_at', { ascending: false });
+            const processSelect = document.getElementById('audiencia-process');
+            if (processos) {
+                processSelect.innerHTML = '<option value="">Selecione o Processo</option>' + 
+                    processos.map(p => `<option value="${p.id}">${p.numero_processo || 'Sem número ID: '+p.id}</option>`).join('');
+            }
+
+            if (id) {
+                // Modo Edição
+                title.textContent = 'Editar Audiência';
+                btnDelete.style.display = 'block'; // Mostra o botão de excluir
+                
+                const { data: audiencia } = await supabaseClient.from('calendario_audiencias').select('*').eq('id', id).single();
+                if (audiencia) {
+                    document.getElementById('audiencia-id').value = audiencia.id;
+                    document.getElementById('audiencia-title').value = audiencia.titulo || '';
+                    document.getElementById('audiencia-process').value = audiencia.processo_id || '';
+                    // Formata a data para o input datetime-local (YYYY-MM-DDThh:mm)
+                    document.getElementById('audiencia-date').value = audiencia.data_audiencia ? audiencia.data_audiencia.slice(0, 16) : '';
+                    document.getElementById('audiencia-type').value = audiencia.tipo_audiencia || 'inicial';
+                    document.getElementById('audiencia-local').value = audiencia.local || '';
+                    document.getElementById('audiencia-status').value = audiencia.status || 'agendada';
+                    document.getElementById('audiencia-desc').value = audiencia.descricao || '';
+                }
+            } else {
+                // Modo Inserção
+                title.textContent = 'Agendar Audiência';
+                btnDelete.style.display = 'none';
+                document.getElementById('audiencia-status').value = 'agendada';
+                // Se clicou num dia específico do calendário, preenche a data com 09:00 da manhã
+                if (dateClickStr) {
+                    document.getElementById('audiencia-date').value = dateClickStr + 'T09:00';
+                }
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeAudienciaModal() {
+            document.getElementById('audiencia-modal').classList.add('hidden');
+        }
+
+        // --- Salvar Audiência ---
+        document.getElementById('audiencia-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const audienciaId = document.getElementById('audiencia-id').value;
+            const audienciaData = {
+                titulo: document.getElementById('audiencia-title').value,
+                processo_id: document.getElementById('audiencia-process').value,
+                data_audiencia: document.getElementById('audiencia-date').value,
+                tipo_audiencia: document.getElementById('audiencia-type').value,
+                local: document.getElementById('audiencia-local').value,
+                status: document.getElementById('audiencia-status').value,
+                descricao: document.getElementById('audiencia-desc').value
+            };
+
+            let error;
+            if (audienciaId) {
+                const { error: updateError } = await supabaseClient.from('calendario_audiencias').update(audienciaData).eq('id', audienciaId);
+                error = updateError;
+            } else {
+                const { error: insertError } = await supabaseClient.from('calendario_audiencias').insert([audienciaData]);
+                error = insertError;
+            }
+
+            if (error) {
+                alert('Erro ao salvar audiência: ' + error.message);
+            } else {
+                closeAudienciaModal();
+                loadAudiencias(); // Recarrega o calendário
+                loadDashboardData(); // Atualiza KPIs
+            }
+        });
+
+        // --- Excluir Audiência ---
+        window.deleteAudiencia = async function() {
+            const id = document.getElementById('audiencia-id').value;
+            if (!id || !confirm('Tem certeza que deseja cancelar e excluir esta audiência da pauta?')) return;
+
+            const { error } = await supabaseClient.from('calendario_audiencias').delete().eq('id', id);
+
+            if (error) {
+                alert('Erro ao excluir: ' + error.message);
+            } else {
+                closeAudienciaModal();
+                loadAudiencias();
+                loadDashboardData();
+            }
+        };
+
+        // --- Renderizar FullCalendar ---
+        async function loadAudiencias() {
+            // Traz as audiências fazendo um JOIN com a tabela processos para pegar o número
+            const { data: audiencias, error } = await supabaseClient.from('calendario_audiencias').select('*, processos(numero_processo)');
+            if(error || !audiencias) return;
+
+            // Formata as cores baseadas no status
+            const eventos = audiencias.map(a => {
+                let cor = '#004D4D'; // Agendada (Verde escuro padrão)
+                if (a.status === 'realizada') cor = '#28a745'; // Verde sucesso
+                if (a.status === 'cancelada') cor = '#dc3545'; // Vermelho perigo
+
+                const numProcesso = a.processos ? a.processos.numero_processo : '';
+
+                return {
+                    id: a.id,
+                    title: `${a.titulo} (${numProcesso})`,
+                    start: a.data_audiencia,
+                    backgroundColor: cor,
+                    borderColor: cor,
+                    extendedProps: {
+                        descricao: a.descricao,
+                        local: a.local
+                    }
+                };
+            });
 
             const calendarEl = document.getElementById('calendar');
             
-            // Se já existir, destrói para recriar com novos dados
             if (fullCalendarInstance) {
                 fullCalendarInstance.destroy();
             }
@@ -1061,10 +1240,19 @@
                     week: 'Semana',
                     list: 'Lista'
                 },
-                events: eventos
+                events: eventos,
+                // INTERATIVIDADE DO CALENDÁRIO:
+                eventClick: function(info) {
+                    // Clicou num evento que já existe -> Abre modal para edição
+                    openAudienciaModal(info.event.id);
+                },
+                dateClick: function(info) {
+                    // Clicou num dia vazio do calendário -> Abre modal com a data pré-preenchida
+                    openAudienciaModal(null, info.dateStr);
+                }
             });
 
-            // Só renderiza se a aba estiver visível (senão quebra o layout)
+            // Só renderiza se a aba estiver visível (evita erro de tamanho do calendário em background)
             if (!document.getElementById('tab-audiencias').classList.contains('hidden')) {
                 fullCalendarInstance.render();
             }
