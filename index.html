@@ -157,7 +157,7 @@
                     <button class="btn-primary" onclick="openClientModal()"><i class="fas fa-plus"></i> Adicionar Cliente</button>
                 </div>
                 <table class="data-table">
-                    <thead><tr><th>Nome</th><th>E-mail</th><th>CPF/CNPJ</th><th>Ações</th></tr></thead>
+                    <thead><tr><th>Nome</th><th>E-mail</th><th>CPF/CNPJ</th><th>Situação</th><th>Ações</th></tr></thead>
                     <tbody id="clients-tbody"></tbody>
                 </table>
             </section>
@@ -165,8 +165,8 @@
             <!-- ABA 3: PROCESSOS -->
             <section id="tab-processos" class="tab-content hidden">
                 <div class="action-bar">
-                    <input type="text" class="search-box" id="search-process" placeholder="Buscar processo...">
-                    <button class="btn-primary" onclick="alert('Cadastro em breve')"><i class="fas fa-plus"></i> Novo Processo</button>
+                    <input type="text" class="search-box" id="search-process" placeholder="Buscar processo pelo número ou cliente...">
+                    <button class="btn-primary" onclick="openProcessModal()"><i class="fas fa-plus"></i> Novo Processo</button>
                 </div>
                 <table class="data-table">
                     <thead><tr><th>Número</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Data Início</th></tr></thead>
@@ -270,6 +270,70 @@
                 </form>
             </div>
         </div>
+
+        <!-- MODAL DE PROCESSO -->
+        <div id="process-modal" class="modal-overlay hidden">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modal-process-title">Novo Processo</h3>
+                    <button class="btn-close" onclick="closeProcessModal()">&times;</button>
+                </div>
+                <form id="process-form">
+                    <input type="hidden" id="process-id">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="process-number">Número do Processo (CNJ) *</label>
+                            <input type="text" id="process-number" required placeholder="0000000-00.0000.0.00.0000">
+                        </div>
+                        <div class="form-group">
+                            <label for="process-client">Cliente *</label>
+                            <select id="process-client" required>
+                                <option value="">Carregando...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="process-lawyer">Advogado Responsável</label>
+                            <select id="process-lawyer">
+                                <option value="">Carregando...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="process-type">Área do Direito</label>
+                            <select id="process-type">
+                                <option value="civil">Cível</option>
+                                <option value="trabalhista">Trabalhista</option>
+                                <option value="penal">Penal</option>
+                                <option value="previdenciario">Previdenciário</option>
+                                <option value="empresarial">Empresarial</option>
+                                <option value="familia">Família</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="process-status">Status</label>
+                            <select id="process-status">
+                                <option value="pendente">Pendente</option>
+                                <option value="andamento">Em Andamento</option>
+                                <option value="concluido">Concluído</option>
+                                <option value="arquivado">Arquivado</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="process-date">Data de Abertura</label>
+                            <input type="date" id="process-date">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="process-desc">Descrição / Objeto da Ação</label>
+                            <input type="text" id="process-desc">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closeProcessModal()">Cancelar</button>
+                        <button type="submit" class="btn-primary">Salvar Processo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     <script>
         // ==========================================
         // 1. CONFIGURAÇÃO SUPABASE
@@ -498,23 +562,180 @@
             });
         });
 
+        // ==========================================
+        // ABA: PROCESSOS (CRUD COMPLETO)
+        // ==========================================
+
+        // --- Abrir e Fechar Modal ---
+        async function openProcessModal(id = null) {
+            const modal = document.getElementById('process-modal');
+            const title = document.getElementById('modal-process-title');
+            const form = document.getElementById('process-form');
+            
+            form.reset();
+            document.getElementById('process-id').value = '';
+            document.getElementById('process-date').valueAsDate = new Date();
+            
+            // Popula as listas de Clientes e Advogados primeiro
+            await populateProcessSelects();
+
+            if (id) {
+                title.textContent = 'Editar Processo';
+                await fetchProcessData(id);
+            } else {
+                title.textContent = 'Novo Processo';
+                document.getElementById('process-status').value = 'pendente';
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeProcessModal() {
+            document.getElementById('process-modal').classList.add('hidden');
+        }
+
+        // --- Preencher Caixas de Seleção (Chaves Estrangeiras) ---
+        async function populateProcessSelects() {
+            const clientSelect = document.getElementById('process-client');
+            const lawyerSelect = document.getElementById('process-lawyer');
+
+            // Busca clientes ativos
+            const { data: clients } = await supabaseClient.from('clients').select('id, name').eq('status', 'ativo').order('name');
+            if (clients) {
+                clientSelect.innerHTML = '<option value="">Selecione o Cliente</option>' + 
+                    clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            }
+
+            // Busca advogados
+            const { data: lawyers } = await supabaseClient.from('advogados').select('id, name').order('name');
+            if (lawyers) {
+                lawyerSelect.innerHTML = '<option value="">Selecione o Advogado</option>' + 
+                    lawyers.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+            }
+        }
+
+        // --- Buscar Dados para Edição ---
+        async function fetchProcessData(id) {
+            const { data, error } = await supabaseClient.from('processos').select('*').eq('id', id).single();
+            if (error) {
+                alert('Erro ao buscar processo.');
+                return;
+            }
+            document.getElementById('process-id').value = data.id;
+            document.getElementById('process-number').value = data.numero_processo || '';
+            document.getElementById('process-client').value = data.cliente_id || '';
+            document.getElementById('process-lawyer').value = data.advogado_id || '';
+            document.getElementById('process-type').value = data.tipo_processo || 'civil';
+            document.getElementById('process-status').value = data.status || 'pendente';
+            document.getElementById('process-date').value = data.data_abertura || '';
+            document.getElementById('process-desc').value = data.descricao || '';
+        }
+
+        // --- Salvar Processo (Insert / Update) ---
+        document.getElementById('process-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const processId = document.getElementById('process-id').value;
+            const processData = {
+                numero_processo: document.getElementById('process-number').value,
+                cliente_id: document.getElementById('process-client').value,
+                advogado_id: document.getElementById('process-lawyer').value || null,
+                tipo_processo: document.getElementById('process-type').value,
+                status: document.getElementById('process-status').value,
+                data_abertura: document.getElementById('process-date').value || null,
+                descricao: document.getElementById('process-desc').value
+            };
+
+            let error;
+            if (processId) {
+                const { error: updateError } = await supabaseClient.from('processos').update(processData).eq('id', processId);
+                error = updateError;
+            } else {
+                const { error: insertError } = await supabaseClient.from('processos').insert([processData]);
+                error = insertError;
+            }
+
+            if (error) {
+                alert('Erro ao salvar processo: ' + error.message);
+            } else {
+                closeProcessModal();
+                loadProcessos(); 
+                loadDashboardData();
+                if (typeof initCharts === 'function') initCharts(); // Atualiza os gráficos de relatório automaticamente
+            }
+        });
+
+        // --- Excluir Processo ---
+        window.deleteProcess = async function(id) {
+            if (!confirm('Tem certeza que deseja excluir este processo? Essa ação não pode ser desfeita.')) return;
+
+            const { error } = await supabaseClient.from('processos').delete().eq('id', id);
+
+            if (error) {
+                alert('Erro ao excluir: O processo pode possuir prazos ou audiências vinculadas.');
+            } else {
+                loadProcessos();
+                loadDashboardData();
+                if (typeof initCharts === 'function') initCharts();
+            }
+        };
+
+        // --- Listar Processos na Tabela (Com JOIN em clientes e advogados) ---
         async function loadProcessos() {
-            const { data: processos } = await supabaseClient.from('processos').select(`*, clients(name)`).order('created_at', { ascending: false });
+            const { data: processos, error } = await supabaseClient
+                .from('processos')
+                .select('*, clients(name), advogados(name)')
+                .order('created_at', { ascending: false });
+                
             const tbody = document.getElementById('processos-tbody');
             tbody.innerHTML = '';
-            if(!processos) return;
+            
+            if (error) { console.error(error); return; }
+            if (processos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhum processo cadastrado.</td></tr>';
+                return;
+            }
+
             processos.forEach(p => {
-                const clientName = p.clients ? p.clients.name : 'Desconhecido';
-                const dataInicio = p.data_abertura ? new Date(p.data_abertura).toLocaleDateString('pt-BR') : '-';
+                const clientName = p.clients ? p.clients.name : 'Sem Cliente';
+                const lawyerName = p.advogados ? p.advogados.name : '-';
+                
+                // Formatação de data ignorando Timezone UTC para exibir a data exata inserida
+                const dataInicio = p.data_abertura ? p.data_abertura.split('-').reverse().join('/') : '-';
+                
+                let statusColor = '#666';
+                let statusBg = '#eee';
+                if(p.status === 'andamento') { statusColor = '#004D4D'; statusBg = '#D1ECF1'; }
+                if(p.status === 'concluido') { statusColor = '#155724'; statusBg = '#D4EDDA'; }
+                if(p.status === 'pendente') { statusColor = '#856404'; statusBg = '#FFF3CD'; }
+                
                 tbody.innerHTML += `<tr>
-                    <td><strong>${p.numero_processo}</strong></td>
-                    <td>${clientName}</td>
-                    <td>${p.tipo_processo || '-'}</td>
-                    <td><b>${p.status}</b></td>
+                    <td><strong>${p.numero_processo || 'S/N'}</strong></td>
+                    <td>${clientName} <br><small style="color: #666;">Adv: ${lawyerName}</small></td>
+                    <td><span style="text-transform: capitalize;">${p.tipo_processo || '-'}</span></td>
+                    <td><span class="badge" style="background-color: ${statusBg}; color: ${statusColor}; text-transform: uppercase;">${p.status}</span></td>
                     <td>${dataInicio}</td>
+                    <td style="white-space: nowrap;">
+                        <button style="border:none; background:transparent; color:var(--primary-dark); cursor:pointer; margin-right: 10px;" onclick="openProcessModal(${p.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                        <button style="border:none; background:transparent; color:#dc3545; cursor:pointer;" onclick="deleteProcess(${p.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </td>
                 </tr>`;
             });
         }
+
+        // Filtro local da Tabela de Processos
+        document.getElementById('search-process').addEventListener('input', (e) => {
+            const termo = e.target.value.toLowerCase();
+            const linhas = document.querySelectorAll('#processos-tbody tr');
+            linhas.forEach(linha => {
+                const textoLinha = linha.textContent.toLowerCase();
+                if (textoLinha.includes(termo)) {
+                    linha.style.display = '';
+                } else {
+                    linha.style.display = 'none';
+                }
+            });
+        });
 
         // ==========================================
         // 6. ABA: PRAZOS (KANBAN DRAG & DROP)
