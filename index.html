@@ -169,7 +169,7 @@
                     <button class="btn-primary" onclick="openProcessModal()"><i class="fas fa-plus"></i> Novo Processo</button>
                 </div>
                 <table class="data-table">
-                    <thead><tr><th>Número</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Data Início</th></tr></thead>
+                    <thead><tr><th>Número</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Data Início</th><th>Ações</th></tr></thead>
                     <tbody id="processos-tbody"></tbody>
                 </table>
             </section>
@@ -178,7 +178,7 @@
             <section id="tab-prazos" class="tab-content hidden">
                 <div class="action-bar">
                     <h3 style="margin:0; color: var(--primary-dark);">Quadro de Prazos</h3>
-                    <button class="btn-primary" onclick="alert('Novo prazo em breve')"><i class="fas fa-plus"></i> Novo Prazo</button>
+                    <button class="btn-primary" onclick="openPrazoModal()"><i class="fas fa-plus"></i> Novo Prazo</button>
                 </div>
                 <div class="kanban-board">
                     <!-- Coluna Pendente -->
@@ -334,6 +334,51 @@
             </div>
         </div>
 
+        <!-- MODAL DE PRAZO -->
+        <div id="prazo-modal" class="modal-overlay hidden">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modal-prazo-title">Novo Prazo</h3>
+                    <button class="btn-close" onclick="closePrazoModal()">&times;</button>
+                </div>
+                <form id="prazo-form">
+                    <input type="hidden" id="prazo-id">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="prazo-title">Título do Prazo *</label>
+                            <input type="text" id="prazo-title" required placeholder="Ex: Contestação">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="prazo-process">Processo Vinculado *</label>
+                            <select id="prazo-process" required>
+                                <option value="">Carregando...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="prazo-date">Data de Vencimento *</label>
+                            <input type="date" id="prazo-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="prazo-priority">Prioridade</label>
+                            <select id="prazo-priority">
+                                <option value="baixa">Baixa</option>
+                                <option value="media">Média</option>
+                                <option value="alta">Alta</option>
+                                <option value="urgente">Urgente</option>
+                            </select>
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="prazo-desc">Descrição / Detalhes</label>
+                            <input type="text" id="prazo-desc">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" onclick="closePrazoModal()">Cancelar</button>
+                        <button type="submit" class="btn-primary">Salvar Prazo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     <script>
         // ==========================================
         // 1. CONFIGURAÇÃO SUPABASE
@@ -738,50 +783,161 @@
         });
 
         // ==========================================
-        // 6. ABA: PRAZOS (KANBAN DRAG & DROP)
+        // 6. ABA: PRAZOS (KANBAN E CRUD COMPLETO)
         // ==========================================
-        async function loadPrazos() {
-            const { data: prazos } = await supabaseClient.from('prazos_internos').select('*');
-            if(!prazos) return;
 
-            // Limpa as colunas
-            document.getElementById('kanban-pendente').innerHTML = '';
-            document.getElementById('kanban-andamento').innerHTML = '';
-            document.getElementById('kanban-concluido').innerHTML = '';
-            document.getElementById('kanban-arquivado').innerHTML = '';
+        let isDraggingCard = false; // Flag para evitar que o auto-refresh destrua o card enquanto o usuário arrasta
+
+        // --- Abrir e Fechar Modal ---
+        async function openPrazoModal(id = null) {
+            const modal = document.getElementById('prazo-modal');
+            const title = document.getElementById('modal-prazo-title');
+            const form = document.getElementById('prazo-form');
+            
+            form.reset();
+            document.getElementById('prazo-id').value = '';
+            
+            // Popula os processos para o usuário escolher
+            const { data: processos } = await supabaseClient.from('processos').select('id, numero_processo').order('created_at', { ascending: false });
+            const processSelect = document.getElementById('prazo-process');
+            if (processos) {
+                processSelect.innerHTML = '<option value="">Selecione o Processo</option>' + 
+                    processos.map(p => `<option value="${p.id}">${p.numero_processo || 'Sem número ID: '+p.id}</option>`).join('');
+            }
+
+            if (id) {
+                title.textContent = 'Editar Prazo';
+                const { data: prazo } = await supabaseClient.from('prazos_internos').select('*').eq('id', id).single();
+                if (prazo) {
+                    document.getElementById('prazo-id').value = prazo.id;
+                    document.getElementById('prazo-title').value = prazo.titulo || '';
+                    document.getElementById('prazo-process').value = prazo.processo_id || '';
+                    // Ajuste de fuso horário para a data aparecer corretamente no input
+                    document.getElementById('prazo-date').value = prazo.data_vencimento ? prazo.data_vencimento.split('T')[0] : '';
+                    document.getElementById('prazo-priority').value = prazo.prioridade || 'media';
+                    document.getElementById('prazo-desc').value = prazo.descricao || '';
+                }
+            } else {
+                title.textContent = 'Novo Prazo';
+            }
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closePrazoModal() {
+            document.getElementById('prazo-modal').classList.add('hidden');
+        }
+
+        // --- Salvar Prazo ---
+        document.getElementById('prazo-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const prazoId = document.getElementById('prazo-id').value;
+            const prazoData = {
+                titulo: document.getElementById('prazo-title').value,
+                processo_id: document.getElementById('prazo-process').value,
+                data_vencimento: document.getElementById('prazo-date').value || null,
+                prioridade: document.getElementById('prazo-priority').value,
+                descricao: document.getElementById('prazo-desc').value
+            };
+
+            if (!prazoId) {
+                prazoData.status = 'pendente'; // Todo novo prazo entra como pendente
+                if (currentUser) prazoData.responsavel_id = currentUser.id;
+            }
+
+            let error;
+            if (prazoId) {
+                const { error: updateError } = await supabaseClient.from('prazos_internos').update(prazoData).eq('id', prazoId);
+                error = updateError;
+            } else {
+                const { error: insertError } = await supabaseClient.from('prazos_internos').insert([prazoData]);
+                error = insertError;
+            }
+
+            if (error) {
+                alert('Erro ao salvar prazo: ' + error.message);
+            } else {
+                closePrazoModal();
+                loadPrazos(); 
+                loadDashboardData();
+            }
+        });
+
+        // --- Carregar e Renderizar o Kanban ---
+        async function loadPrazos() {
+            // Se o usuário estiver arrastando um card no momento do refresh automático, aborta a atualização para não quebrar a ação
+            if (isDraggingCard) return;
+
+            // Busca os prazos e faz um JOIN com a tabela de processos para mostrar o número CNJ no card
+            const { data: prazos, error } = await supabaseClient.from('prazos_internos').select('*, processos(numero_processo)');
+            if(error || !prazos) return;
+
+            // Limpa as colunas atuais
+            const colunas = {
+                'pendente': document.getElementById('kanban-pendente'),
+                'andamento': document.getElementById('kanban-andamento'),
+                'concluido': document.getElementById('kanban-concluido'),
+                'arquivado': document.getElementById('kanban-arquivado')
+            };
+
+            Object.values(colunas).forEach(col => { if(col) col.innerHTML = ''; });
 
             prazos.forEach(prazo => {
-                const dateStr = prazo.data_vencimento ? new Date(prazo.data_vencimento).toLocaleDateString('pt-BR') : 'Sem data';
-                const urgentClass = (prazo.prioridade && prazo.prioridade.toLowerCase() === 'urgente') || (prazo.prioridade && prazo.prioridade.toLowerCase() === 'alta') ? 'urgente' : '';
+                // Formata a data (ignorando timezone do JS)
+                const dateParts = prazo.data_vencimento ? prazo.data_vencimento.split('T')[0].split('-') : null;
+                const dateStr = dateParts ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : 'Sem data';
                 
+                const processNum = prazo.processos ? prazo.processos.numero_processo : '';
+                const prioridade = prazo.prioridade ? prazo.prioridade.toLowerCase() : 'media';
+                const urgentClass = (prioridade === 'urgente' || prioridade === 'alta') ? 'urgente' : '';
+                
+                // Monta o Card HTML
                 const cardHtml = `
-                    <div class="kanban-card" draggable="true" ondragstart="dragStart(event)" data-id="${prazo.id}">
-                        <h4>${prazo.titulo}</h4>
-                        <p><i class="far fa-calendar-alt"></i> ${dateStr}</p>
-                        <span class="tag ${urgentClass}">${prazo.prioridade || 'Normal'}</span>
+                    <div class="kanban-card" draggable="true" ondragstart="dragStart(event)" ondragend="dragEnd(event)" data-id="${prazo.id}">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <h4 style="margin: 0 0 5px 0;">${prazo.titulo}</h4>
+                            <button onclick="openPrazoModal(${prazo.id})" style="border:none; background:transparent; color:#666; cursor:pointer;" title="Editar"><i class="fas fa-pen" style="font-size:0.8rem;"></i></button>
+                        </div>
+                        <p style="margin-bottom: 5px; color: var(--primary-dark); font-weight: 600; font-size: 0.75rem;">${processNum}</p>
+                        <p style="margin-bottom: 5px;"><i class="far fa-calendar-alt"></i> Vence: ${dateStr}</p>
+                        <span class="tag ${urgentClass}" style="text-transform: uppercase;">${prioridade}</span>
                     </div>
                 `;
                 
-                // Tenta colocar na coluna correta (fallback para 'pendente' se o status não bater)
-                const column = document.getElementById(`kanban-${prazo.status}`) || document.getElementById('kanban-pendente');
-                column.innerHTML += cardHtml;
+                // Insere na coluna correspondente
+                const col = colunas[prazo.status] || colunas['pendente'];
+                col.innerHTML += cardHtml;
             });
         }
 
-        // Funções de Drag & Drop HTML5
+        // --- Funções de Drag & Drop ---
         function dragStart(e) {
-            e.dataTransfer.setData('text/plain', e.target.dataset.id);
+            isDraggingCard = true; // Pausa o auto-refresh
+            e.dataTransfer.setData('text/plain', e.currentTarget.dataset.id);
+            // Um pequeno delay para o visual do card não sumir da mão do usuário
+            setTimeout(() => e.target.style.opacity = '0.5', 0);
         }
+
+        function dragEnd(e) {
+            isDraggingCard = false; // Retoma o auto-refresh
+            e.target.style.opacity = '1';
+            document.querySelectorAll('.kanban-column').forEach(col => col.classList.remove('drag-over'));
+        }
+
         function allowDrop(e) {
-            e.preventDefault();
+            e.preventDefault(); // Necessário para o evento drop funcionar
         }
+
         function dragEnter(e) {
             e.preventDefault();
             e.currentTarget.classList.add('drag-over');
         }
+
         function dragLeave(e) {
             e.currentTarget.classList.remove('drag-over');
         }
+
         async function drop(e, newStatus) {
             e.preventDefault();
             e.currentTarget.classList.remove('drag-over');
@@ -789,20 +945,34 @@
             const prazoId = e.dataTransfer.getData('text/plain');
             if(!prazoId) return;
 
-            // Atualiza no banco Supabase
+            // 1. Atualização Otimista: Movemos o HTML visualmente primeiro para não haver lentidão (Lag)
+            const draggedCard = document.querySelector(`.kanban-card[data-id="${prazoId}"]`);
+            if (draggedCard) {
+                const targetColumn = document.getElementById(`kanban-${newStatus}`);
+                targetColumn.appendChild(draggedCard);
+            }
+
+            // 2. Grava no Supabase em background
             const { error } = await supabaseClient
                 .from('prazos_internos')
                 .update({ status: newStatus })
                 .eq('id', prazoId);
             
-            if (!error) {
-                loadPrazos(); // Recarrega os cards nas colunas atualizadas
-                loadDashboardData(); // Atualiza KPIs
+            if (error) {
+                alert("Erro ao gravar novo status no banco: " + error.message);
+                loadPrazos(); // Reverte a tela caso dê erro no banco
             } else {
-                alert("Erro ao mover prazo.");
+                loadDashboardData(); // Se o status for concluído, talvez o dashboard mude
             }
         }
 
+        // --- Auto-Refresh (Apenas se estiver na aba Prazos) ---
+        setInterval(() => {
+            const abaPrazosAtiva = !document.getElementById('tab-prazos').classList.contains('hidden');
+            if (abaPrazosAtiva && !isDraggingCard) {
+                loadPrazos();
+            }
+        }, 10000); // Atualiza a cada 10 segundos para manter a tela viva
         // ==========================================
         // 7. ABA: AUDIÊNCIAS (FULLCALENDAR)
         // ==========================================
