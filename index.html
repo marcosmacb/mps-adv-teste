@@ -1195,13 +1195,13 @@
 
         // --- Renderizar FullCalendar ---
         async function loadAudiencias() {
-            // Traz as audiências fazendo um JOIN com a tabela processos para pegar o número
+            // Traz as audiências fazendo um JOIN com a tabela processos
             const { data: audiencias, error } = await supabaseClient.from('calendario_audiencias').select('*, processos(numero_processo)');
             if(error || !audiencias) return;
 
             // Formata as cores baseadas no status
             const eventos = audiencias.map(a => {
-                let cor = '#004D4D'; // Agendada (Verde escuro padrão)
+                let cor = '#004D4D'; // Agendada (Verde escuro)
                 if (a.status === 'realizada') cor = '#28a745'; // Verde sucesso
                 if (a.status === 'cancelada') cor = '#dc3545'; // Vermelho perigo
 
@@ -1222,37 +1222,37 @@
 
             const calendarEl = document.getElementById('calendar');
             
-            if (fullCalendarInstance) {
-                fullCalendarInstance.destroy();
+            // SE A INSTÂNCIA DO CALENDÁRIO AINDA NÃO EXISTE, NÓS A CRIAMOS
+            if (!fullCalendarInstance) {
+                fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
+                    initialView: 'dayGridMonth',
+                    locale: 'pt-br',
+                    headerToolbar: {
+                        left: 'prev,next today',
+                        center: 'title',
+                        right: 'dayGridMonth,timeGridWeek,listMonth'
+                    },
+                    buttonText: {
+                        today: 'Hoje',
+                        month: 'Mês',
+                        week: 'Semana',
+                        list: 'Lista'
+                    },
+                    events: eventos, // Passa os eventos iniciais
+                    eventClick: function(info) {
+                        openAudienciaModal(info.event.id);
+                    },
+                    dateClick: function(info) {
+                        openAudienciaModal(null, info.dateStr);
+                    }
+                });
+            } else {
+                // SE O CALENDÁRIO JÁ EXISTE, APENAS TROCAMOS OS EVENTOS SEM DESTRUIR A ESTRUTURA
+                fullCalendarInstance.removeAllEvents();
+                fullCalendarInstance.addEventSource(eventos);
             }
 
-            fullCalendarInstance = new FullCalendar.Calendar(calendarEl, {
-                initialView: 'dayGridMonth',
-                locale: 'pt-br',
-                headerToolbar: {
-                    left: 'prev,next today',
-                    center: 'title',
-                    right: 'dayGridMonth,timeGridWeek,listMonth'
-                },
-                buttonText: {
-                    today: 'Hoje',
-                    month: 'Mês',
-                    week: 'Semana',
-                    list: 'Lista'
-                },
-                events: eventos,
-                // INTERATIVIDADE DO CALENDÁRIO:
-                eventClick: function(info) {
-                    // Clicou num evento que já existe -> Abre modal para edição
-                    openAudienciaModal(info.event.id);
-                },
-                dateClick: function(info) {
-                    // Clicou num dia vazio do calendário -> Abre modal com a data pré-preenchida
-                    openAudienciaModal(null, info.dateStr);
-                }
-            });
-
-            // Só renderiza se a aba estiver visível (evita erro de tamanho do calendário em background)
+            // Renderiza apenas se a aba estiver visível (evita quebrar a largura)
             if (!document.getElementById('tab-audiencias').classList.contains('hidden')) {
                 fullCalendarInstance.render();
             }
