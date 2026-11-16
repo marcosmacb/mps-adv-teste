@@ -390,6 +390,8 @@
         // Variáveis Globais
         let fullCalendarInstance = null;
         let currentUser = null;
+        let statusChartInstance = null;
+        let typeChartInstance = null;
 
         // ==========================================
         // 2. NAVEGAÇÃO DE ABAS
@@ -908,7 +910,6 @@
                 const prioridade = prazo.prioridade ? prazo.prioridade.toLowerCase() : 'media';
                 const urgentClass = (prioridade === 'urgente' || prioridade === 'alta') ? 'urgente' : '';
                 
-                // CRIA A ETIQUETA "SEM PRAZO DEFINIDO" QUANDO A DATA É NULA
                 let dateStr = '';
                 if (prazo.data_vencimento) {
                     const dateParts = prazo.data_vencimento.split('T')[0].split('-');
@@ -917,8 +918,9 @@
                     dateStr = `<i class="fas fa-exclamation-triangle" style="color:#dc3545;"></i> <span style="color:#dc3545; font-weight:bold;">Sem prazo definido</span>`;
                 }
                 
+                // MUDANÇA: Injetamos o data-process-id="${prazo.processo_id}" no HTML do cartão
                 const cardHtml = `
-                    <div class="kanban-card" draggable="true" ondragstart="dragStart(event)" ondragend="dragEnd(event)" data-id="${prazo.id}">
+                    <div class="kanban-card" draggable="true" ondragstart="dragStart(event)" ondragend="dragEnd(event)" data-id="${prazo.id}" data-process-id="${prazo.processo_id}">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <h4 style="margin: 0 0 5px 0;">${prazo.titulo}</h4>
                             <button type="button" onclick="openPrazoModal(${prazo.id})" style="border:none; background:transparent; color:#666; cursor:pointer;" title="Editar"><i class="fas fa-pen" style="font-size:0.8rem;"></i></button>
@@ -937,10 +939,57 @@
         // --- Funções Otimizadas de Drag & Drop (Arrastar e Soltar) ---
         function dragStart(e) {
             isDraggingCard = true; 
-            // Captura o ID exato da div do cartão para o Supabase não se perder
+            
             const cardId = e.currentTarget.getAttribute('data-id');
+            const processId = e.currentTarget.getAttribute('data-process-id'); // Captura o ID do processo pai
+            
             e.dataTransfer.setData('text/plain', cardId);
+            e.dataTransfer.setData('process-id', processId); // Envia o ID do processo para o drop
+            
             setTimeout(() => e.target.style.opacity = '0.5', 0);
+        }
+
+        async function drop(e, newStatus) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            
+            const prazoId = e.dataTransfer.getData('text/plain');
+            const processId = e.dataTransfer.getData('process-id'); // Resgata o ID do processo
+            
+            if(!prazoId) return;
+
+            // 1. Move visualmente a div imediatamente
+            const draggedCard = document.querySelector(`.kanban-card[data-id="${prazoId}"]`);
+            if (draggedCard) {
+                const targetCardsContainer = e.currentTarget.querySelector('.kanban-cards');
+                if (targetCardsContainer) targetCardsContainer.appendChild(draggedCard);
+            }
+
+            // 2. Grava o novo status na tabela de Prazos
+            const { error: prazoError } = await supabaseClient
+                .from('prazos_internos')
+                .update({ status: newStatus })
+                .eq('id', parseInt(prazoId, 10));
+            
+            // 3. MUDANÇA: Sincroniza o status na tabela do Processo Pai
+            let processError = null;
+            if (processId && processId !== "null" && processId !== "undefined") {
+                const { error: pError } = await supabaseClient
+                    .from('processos')
+                    .update({ status: newStatus })
+                    .eq('id', parseInt(processId, 10));
+                processError = pError;
+            }
+            
+            if (prazoError || processError) {
+                console.error("Erro na atualização do Supabase");
+                alert("Erro ao gravar novo status no banco de dados.");
+                loadPrazos(); // Reverte a tela em caso de falha
+            } else {
+                loadDashboardData(); 
+                loadProcessos(); // Atualiza a tabela da Aba de Processos nos bastidores
+                if (typeof initCharts === 'function') initCharts(); // Atualiza os gráficos de relatório 
+            }
         }
 
         function dragEnd(e) {
@@ -966,36 +1015,7 @@
             }
         }
 
-        async function drop(e, newStatus) {
-            e.preventDefault();
-            e.currentTarget.classList.remove('drag-over');
-            
-            const prazoId = e.dataTransfer.getData('text/plain');
-            if(!prazoId) return;
-
-            // 1. Move visualmente a div para dentro do container correto (.kanban-cards) da coluna
-            const draggedCard = document.querySelector(`.kanban-card[data-id="${prazoId}"]`);
-            if (draggedCard) {
-                const targetCardsContainer = e.currentTarget.querySelector('.kanban-cards');
-                if (targetCardsContainer) {
-                    targetCardsContainer.appendChild(draggedCard);
-                }
-            }
-
-            // 2. Grava no banco. O parseInt força o texto a virar Número (Inteiro), que é o formato exigido pelo banco
-            const { error } = await supabaseClient
-                .from('prazos_internos')
-                .update({ status: newStatus })
-                .eq('id', parseInt(prazoId, 10));
-            
-            if (error) {
-                console.error("Erro na atualização do Supabase: ", error);
-                alert("Erro ao gravar novo status no banco de dados.");
-                loadPrazos(); // Se falhar no banco, devolve o cartão pra onde estava
-            } else {
-                loadDashboardData(); 
-            }
-        }
+        
 
         // --- Auto-Refresh (Apenas se estiver na aba Prazos) ---
         setInterval(() => {
