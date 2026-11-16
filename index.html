@@ -482,8 +482,29 @@
         });
 
         // ==========================================
-        // 3. AUTENTICAÇÃO
+        // 3. AUTENTICAÇÃO (SUPABASE AUTH + SESSÃO)
         // ==========================================
+        
+        // Verifica se há sessão ativa (Resolve o problema do F5)
+        async function checkSession() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            
+            if (session) {
+                // Se existe sessão, busca os dados do perfil na nossa tabela 'usuários'
+                const { data: userData } = await supabaseClient.from('usuários').select('*').eq('email', session.user.email).single();
+                if (userData) {
+                    currentUser = userData;
+                    document.getElementById('user-info').textContent = currentUser.name;
+                    document.getElementById('login-screen').classList.add('hidden');
+                    document.getElementById('app-screen').classList.remove('hidden');
+                    loadAllData();
+                }
+            }
+        }
+
+        // Executa a verificação imediatamente
+        checkSession();
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('email').value;
@@ -491,30 +512,38 @@
             const alertBox = document.getElementById('login-alert');
 
             try {
-                const { data: users, error } = await supabaseClient.from('usuários').select('*').eq('email', email).eq('password', password);
-                if (error) throw error;
+                // 1. Faz o login seguro no Supabase Auth (Isso gera o token e os cookies que sobrevivem ao F5)
+                const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
 
-                if (users && users.length > 0) {
-                    // MUDANÇA AQUI: Gravando o usuário na memória global
-                    currentUser = users[0]; 
-                    
+                if (authError) throw authError;
+
+                // 2. Busca os dados do usuário na nossa tabela
+                const { data: userData, error: userError } = await supabaseClient.from('usuários').select('*').eq('email', email).single();
+                
+                if (userData) {
+                    currentUser = userData; 
                     document.getElementById('user-info').textContent = currentUser.name;
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('app-screen').classList.remove('hidden');
-                    
-                    loadAllData(); // Carrega tudo ao logar
+                    loadAllData(); 
                 } else {
-                    alertBox.textContent = 'Credenciais inválidas.';
-                    alertBox.className = 'alert error';
+                    throw new Error("Perfil não encontrado na tabela.");
                 }
             } catch (err) {
-                alertBox.textContent = 'Erro de conexão.';
+                console.error(err);
+                alertBox.textContent = 'Credenciais inválidas.';
                 alertBox.className = 'alert error';
             }
         });
 
-        document.getElementById('btn-logout').addEventListener('click', () => {
-            currentUser = null; // LIMPANDO A VARIÁVEL AO SAIR
+        document.getElementById('btn-logout').addEventListener('click', async () => {
+            // Desloga oficialmente do Supabase e limpa os dados salvos no navegador
+            await supabaseClient.auth.signOut(); 
+            
+            currentUser = null; 
             document.getElementById('login-form').reset();
             document.getElementById('app-screen').classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
