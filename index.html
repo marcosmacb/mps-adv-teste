@@ -106,6 +106,8 @@
         const SUPABASE_URL = 'https://brllgaxcmfwldchpflnk.supabase.co/rest/v1/'; 
         const SUPABASE_KEY = 'sb_publishable_NKvnzMEoWLzP22LwcIsNkw_99TU8MvL';
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// MUDANÇA AQUI: Trocamos o nome da variável de 'supabase' para 'supabaseClient'
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         // Estado da aplicação
         let currentUser = null;
@@ -128,7 +130,7 @@
         }
 
         // =========================================================================
-        // 3. AUTENTICAÇÃO (LOGIN MOCK VIA TABELA USUÁRIOS)
+        // 3. AUTENTICAÇÃO
         // =========================================================================
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -136,8 +138,8 @@
             const password = document.getElementById('password').value;
 
             try {
-                // Consulta real no seu banco Supabase
-                const { data: users, error } = await supabase
+                // MUDANÇA AQUI: Usando supabaseClient
+                const { data: users, error } = await supabaseClient
                     .from('usuários')
                     .select('*')
                     .eq('email', email)
@@ -149,11 +151,9 @@
                     currentUser = users[0];
                     document.getElementById('user-info').textContent = `Olá, ${currentUser.name}`;
                     
-                    // Transição de tela
                     loginScreen.classList.add('hidden');
                     dashboardScreen.classList.remove('hidden');
                     
-                    // Carrega os dados reais
                     loadClients();
                 } else {
                     showMessage(loginAlert, 'E-mail ou senha incorretos.', 'error');
@@ -172,20 +172,21 @@
         });
 
         // =========================================================================
-        // 4. CRUD DE CLIENTES (LENDO E GRAVANDO NO SUPABASE REAL)
+        // 4. CRUD DE CLIENTES 
         // =========================================================================
         
         // --- Ler (Read) ---
         async function loadClients() {
             try {
-                const { data: clients, error } = await supabase
+                // MUDANÇA AQUI: Usando supabaseClient
+                const { data: clients, error } = await supabaseClient
                     .from('clients')
                     .select('*')
                     .order('id', { ascending: false });
 
                 if (error) throw error;
 
-                clientsTbody.innerHTML = ''; // Limpa a tabela
+                clientsTbody.innerHTML = ''; 
 
                 if (clients.length === 0) {
                     clientsTbody.innerHTML = '<tr><td colspan="4">Nenhum cliente cadastrado.</td></tr>';
@@ -217,7 +218,8 @@
             const emailInput = document.getElementById('client-email');
 
             try {
-                const { data, error } = await supabase
+                // MUDANÇA AQUI: Usando supabaseClient
+                const { data, error } = await supabaseClient
                     .from('clients')
                     .insert([
                         { name: nameInput.value, email: emailInput.value, status: 'ativo' }
@@ -228,7 +230,7 @@
                 showMessage(dashboardAlert, 'Cliente adicionado com sucesso!', 'success');
                 nameInput.value = '';
                 emailInput.value = '';
-                loadClients(); // Recarrega a tabela
+                loadClients(); 
 
             } catch (err) {
                 console.error("Erro ao inserir cliente:", err);
@@ -237,12 +239,12 @@
         });
 
         // --- Deletar (Delete) ---
-        // A função precisa ser global (window) para funcionar no onclick do HTML injetado
         window.deleteClient = async function(id) {
             if (!confirm('Tem certeza que deseja excluir este cliente?')) return;
 
             try {
-                const { error } = await supabase
+                // MUDANÇA AQUI: Usando supabaseClient
+                const { error } = await supabaseClient
                     .from('clients')
                     .delete()
                     .eq('id', id);
@@ -250,7 +252,7 @@
                 if (error) throw error;
 
                 showMessage(dashboardAlert, 'Cliente excluído com sucesso.', 'success');
-                loadClients(); // Atualiza a tabela
+                loadClients(); 
             } catch (err) {
                 console.error("Erro ao deletar cliente:", err);
                 showMessage(dashboardAlert, 'Erro ao excluir o cliente.', 'error');
