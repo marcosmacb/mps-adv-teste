@@ -389,6 +389,7 @@
 
         // Variáveis Globais
         let fullCalendarInstance = null;
+        let currentUser = null;
 
         // ==========================================
         // 2. NAVEGAÇÃO DE ABAS
@@ -421,7 +422,10 @@
                 if (error) throw error;
 
                 if (users && users.length > 0) {
-                    document.getElementById('user-info').textContent = users[0].name;
+                    // MUDANÇA AQUI: Gravando o usuário na memória global
+                    currentUser = users[0]; 
+                    
+                    document.getElementById('user-info').textContent = currentUser.name;
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('app-screen').classList.remove('hidden');
                     
@@ -437,6 +441,7 @@
         });
 
         document.getElementById('btn-logout').addEventListener('click', () => {
+            currentUser = null; // LIMPANDO A VARIÁVEL AO SAIR
             document.getElementById('login-form').reset();
             document.getElementById('app-screen').classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
